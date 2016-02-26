@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import qualified Snacks as Snacks
 
 main :: IO ()
-main = someFunc
+main = Snacks.run

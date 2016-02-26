@@ -13,13 +13,18 @@ build-type:          Simple
 -- extra-source-files:
 cabal-version:       >=1.10
 
-executable snacks-exe
+executable snacks
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
-                     , snacks
+                     , containers
+                     , hscurses
   default-language:    Haskell2010
+  other-modules:       Snacks
+                     , Snacks.Event
+                     , Snacks.Game
+                     , Snacks.UI
 
 test-suite snacks-test
   type:                exitcode-stdio-1.0
