@@ -19,12 +19,14 @@ executable snacks
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , containers
+                     , random
                      , hscurses
   default-language:    Haskell2010
   other-modules:       Snacks
                      , Snacks.Event
                      , Snacks.Game
                      , Snacks.UI
+                     , Snacks.World
 
 test-suite snacks-test
   type:                exitcode-stdio-1.0

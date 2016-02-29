@@ -8,7 +8,7 @@ module Snacks.Event
 
 import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
 
-data Event = Up | Down | Left | Right | Key Char | Stop | None
+data Event = Up | Down | Left | Right | Key Char | Stop | Arbitrary
 newtype Loop = Loop { channel :: Chan Event }
 
 createLoop :: IO (Loop)
