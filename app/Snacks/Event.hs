@@ -6,9 +6,12 @@ module Snacks.Event
 , next
 ) where
 
+import Snacks.Types (Direction)
+
 import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
 
-data Event = Up | Down | Left | Right | Key Char | Stop | Arbitrary
+data Event = Dir Direction | Key Char | Stop | Tick | Noop
+  deriving (Eq, Show)
 newtype Loop = Loop { channel :: Chan Event }
 
 createLoop :: IO (Loop)

@@ -1,37 +1,39 @@
 module Snacks.World
-( World(wSize, wScreen, wSnake, wFood)
+( World(size, screen, snake, food, speed)
 , Screen(..)
-, Snake
+, Snake(dir)
 , Food
 , createWorld
-, createFood
-, createSnake
 ) where
+
+import Snacks.Types (Direction(DirRight))
 
 import System.Random (StdGen)
 
-data Screen = Start | PreStart | NoScreen
+data Screen = Start | PrePlay | Playing
   deriving (Show, Read, Eq)
 
-data Snake = Snake
-data Food = Food
+data Snake = Snake { dir :: Direction }
+data Food = Food { position :: (Int, Int) }
 
-data World = World { wSize   :: (Int, Int)
-                   , wScreen :: Screen
-                   , wSnake  :: Snake
-                   , wFood   :: Food
+data World = World { size   :: (Int, Int)
+                   , screen :: Screen
+                   , snake  :: Snake
+                   , food   :: Food
+                   , speed  :: Float
                    }
 
-createWorld :: (Int, Int) -> World
-createWorld s = World { wSize   = s
-                      , wScreen = NoScreen
-                      , wSnake  = Snake
-                      , wFood   = Food
-                      }
+createWorld :: StdGen -> (Int, Int) -> World
+createWorld gen s = World { size   = s
+                          , screen = Start
+                          , snake  = createSnake gen s
+                          , food   = createFood gen s
+                          , speed  = 500
+                          }
 
-createFood :: StdGen -> Food
-createFood = undefined
+createFood :: StdGen -> (Int, Int) -> Food
+createFood _ _ = Food { position = (0, 0) }
 
-createSnake :: StdGen -> Snake
-createSnake = undefined
+createSnake :: StdGen -> (Int, Int) -> Snake
+createSnake _ _ = Snake { dir = DirRight }
 

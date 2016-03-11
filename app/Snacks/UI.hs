@@ -2,32 +2,31 @@ module Snacks.UI
 ( View
 , createView
 , destroyView
-, size
+, gridSize
 , drawScreen
 , drawSnake
 , drawFood
 , refresh
 ) where
 
+import Snacks.Types (Direction(DirUp, DirDown, DirLeft, DirRight))
+
 import qualified Snacks.Event as Event (
     Loop
   , post
   , Event( Stop
-         , Up
-         , Down
-         , Left
-         , Right
+         , Dir
          , Key
-         , Arbitrary
+         , Noop
          )
   )
 import Snacks.World (
-    Screen(Start)
+    Screen(Start, PrePlay)
   , Snake
   , Food
   )
 
-import Control.Monad (liftM, forever)
+import Control.Monad (forever)
 import Control.Concurrent (ThreadId, forkIO)
 import Data.Map.Strict as M (Map)
 
@@ -41,11 +40,15 @@ import qualified UI.HSCurses.Curses as Curses (
         )
   , Border
   , CursorVisibility(CursorInvisible)
+  , initCurses
+  , newWin
   , wBorder
   , wRefresh
+  , stdScr
+  , refresh
+  , update
   , defaultBorder
   , mvWAddStr
-  , initScr
   , endWin
   , getCh
   , cBreak
@@ -55,67 +58,92 @@ import qualified UI.HSCurses.Curses as Curses (
   , scrSize
   )
 
-data View = View { loop :: Event.Loop, view :: Curses.Window }
+data View = View { loop   :: Event.Loop
+                 , window :: Curses.Window
+                 , size   :: (Int, Int)
+                 }
 
 createView :: Event.Loop -> IO View
 createView loop = do
-  view <- liftM (View loop) initCurses
+  setupCurses
+  view <- adjustedView loop
   spawnInputThread view
   return view
+
+setupCurses :: IO ()
+setupCurses = do
+  Curses.initCurses
+  Curses.cBreak True
+  Curses.echo False
+  Curses.cursSet Curses.CursorInvisible
+  return ()
+
+adjustedView :: Event.Loop -> IO View
+adjustedView loop = do
+  (rows, cols) <- Curses.scrSize
+  let cols' = (cols `div` 2) * 2
+  window <- Curses.newWin rows cols' 0 0
+  Curses.keypad window True
+  return $ View loop window (rows, cols')
 
 destroyView :: View -> IO ()
 destroyView _ = Curses.endWin
 
-size :: View -> IO (Int, Int)
-size = const Curses.scrSize
+gridSize :: View -> (Int, Int)
+gridSize view = (rows - 2, cols `div` 2 - 2)
+  where (rows, cols) = size view
 
 drawScreen :: Screen -> View -> IO ()
-drawScreen Start = drawStartScreen
+drawScreen Start   = drawStartScreen
+drawScreen PrePlay = drawPrePlayScreen
 
 drawSnake :: Snake -> View -> IO ()
-drawSnake = undefined
+drawSnake _ _ = return ()
 
 drawFood :: Food -> View -> IO ()
-drawFood = undefined
+drawFood _ _ = return ()
 
 drawStartScreen :: View -> IO ()
 drawStartScreen view = do
   drawBorder view Curses.defaultBorder
-  drawString view "Press any key to start"
+  drawPrompt view "Press any key to start"
+
+drawPrePlayScreen :: View -> IO ()
+drawPrePlayScreen view = do
+  drawBorder view Curses.defaultBorder
+  clearPrompt view
 
 refresh :: View -> IO ()
-refresh = Curses.wRefresh . view
+refresh = Curses.wRefresh . window
 
 drawBorder :: View -> Curses.Border -> IO ()
-drawBorder v border = Curses.wBorder (view v) border
+drawBorder v border = Curses.wBorder (window v) border
 
-drawString :: View -> String -> IO ()
-drawString v string = do
-  s <- size v
-  let row = (fst s `div` 2)
-      col = (snd s `div` 2) - (length string `div` 2)
-  Curses.mvWAddStr (view v) row col string
+drawPrompt :: View -> String -> IO ()
+drawPrompt v string = do
+  let (rows, cols) = size v
+      row          = (rows `div` 2)
+      col          = (cols `div` 2) - (length string `div` 2)
+  Curses.mvWAddStr (window v) row col string
 
--- private
-initCurses :: IO Curses.Window
-initCurses = do
-  window <- Curses.initScr
-  Curses.cBreak True
-  Curses.echo False
-  Curses.cursSet Curses.CursorInvisible
-  Curses.keypad window True
-  return window
+clearPrompt :: View -> IO ()
+clearPrompt v = do
+  let s   = size v
+      row = (fst s `div` 2)
+      str = replicate (snd s - 2) ' '
+  Curses.mvWAddStr (window v) row 1 str
 
-spawnInputThread :: View -> IO (ThreadId)
-spawnInputThread view = forkIO $ forever $ Curses.getCh >>= post
+spawnInputThread :: View -> IO ThreadId
+spawnInputThread view = do
+  forkIO $ forever $ Curses.getCh >>= post
   where post :: Curses.Key -> IO ()
         post = Event.post (loop view) . eventFor
 
         eventFor :: Curses.Key -> Event.Event
         eventFor key = case key of
-                         Curses.KeyUp     -> Event.Up
-                         Curses.KeyDown   -> Event.Down
-                         Curses.KeyLeft   -> Event.Left
-                         Curses.KeyRight  -> Event.Right
+                         Curses.KeyUp     -> Event.Dir DirUp
+                         Curses.KeyDown   -> Event.Dir DirDown
+                         Curses.KeyLeft   -> Event.Dir DirLeft
+                         Curses.KeyRight  -> Event.Dir DirRight
                          Curses.KeyChar c -> Event.Key c
-                         otherwise        -> Event.Arbitrary
+                         otherwise        -> Event.Noop

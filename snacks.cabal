@@ -27,6 +27,7 @@ executable snacks
                      , Snacks.Game
                      , Snacks.UI
                      , Snacks.World
+                     , Snacks.Types
 
 test-suite snacks-test
   type:                exitcode-stdio-1.0
