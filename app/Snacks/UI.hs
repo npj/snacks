@@ -4,7 +4,9 @@ module Snacks.UI
 , destroyView
 , gridSize
 , drawScreen
+, drawPrompt
 , drawSnake
+, clearSnake
 , drawFood
 , refresh
 ) where
@@ -22,11 +24,11 @@ import qualified Snacks.Event as Event (
   )
 import Snacks.World (
     Screen(Start, PrePlay)
-  , Snake
-  , Food
+  , Snake(dir, body)
+  , Food(position)
   )
 
-import Control.Monad (forever)
+import Control.Monad (forever, forM_)
 import Control.Concurrent (ThreadId, forkIO)
 import Data.Map.Strict as M (Map)
 
@@ -40,7 +42,7 @@ import qualified UI.HSCurses.Curses as Curses (
         )
   , Border
   , CursorVisibility(CursorInvisible)
-  , initCurses
+  , initScr
   , newWin
   , wBorder
   , wRefresh
@@ -56,6 +58,8 @@ import qualified UI.HSCurses.Curses as Curses (
   , cursSet
   , keypad
   , scrSize
+  , diamond
+  , lantern
   )
 
 data View = View { loop   :: Event.Loop
@@ -72,10 +76,11 @@ createView loop = do
 
 setupCurses :: IO ()
 setupCurses = do
-  Curses.initCurses
+  window <- Curses.initScr
   Curses.cBreak True
   Curses.echo False
   Curses.cursSet Curses.CursorInvisible
+  Curses.keypad window True
   return ()
 
 adjustedView :: Event.Loop -> IO View
@@ -83,7 +88,6 @@ adjustedView loop = do
   (rows, cols) <- Curses.scrSize
   let cols' = (cols `div` 2) * 2
   window <- Curses.newWin rows cols' 0 0
-  Curses.keypad window True
   return $ View loop window (rows, cols')
 
 destroyView :: View -> IO ()
@@ -98,10 +102,19 @@ drawScreen Start   = drawStartScreen
 drawScreen PrePlay = drawPrePlayScreen
 
 drawSnake :: Snake -> View -> IO ()
-drawSnake _ _ = return ()
+drawSnake snake view =
+  forM_ (body snake) $ \(row, col) -> do
+    Curses.mvWAddStr (window view) row (col * 2) [Curses.diamond]
+
+clearSnake :: Snake -> View -> IO ()
+clearSnake snake view =
+  forM_ (body snake) $ \(row, col) -> do
+    Curses.mvWAddStr (window view) row (col * 2) " "
 
 drawFood :: Food -> View -> IO ()
-drawFood _ _ = return ()
+drawFood food view =
+  Curses.mvWAddStr (window view) row (col * 2) "λ"
+  where (row, col) = (position food)
 
 drawStartScreen :: View -> IO ()
 drawStartScreen view = do
@@ -136,14 +149,11 @@ clearPrompt v = do
 spawnInputThread :: View -> IO ThreadId
 spawnInputThread view = do
   forkIO $ forever $ Curses.getCh >>= post
-  where post :: Curses.Key -> IO ()
-        post = Event.post (loop view) . eventFor
-
-        eventFor :: Curses.Key -> Event.Event
+  where post         = Event.post (loop view) . eventFor
         eventFor key = case key of
-                         Curses.KeyUp     -> Event.Dir DirUp
-                         Curses.KeyDown   -> Event.Dir DirDown
-                         Curses.KeyLeft   -> Event.Dir DirLeft
-                         Curses.KeyRight  -> Event.Dir DirRight
-                         Curses.KeyChar c -> Event.Key c
-                         otherwise        -> Event.Noop
+          Curses.KeyUp     -> Event.Dir DirUp
+          Curses.KeyDown   -> Event.Dir DirDown
+          Curses.KeyLeft   -> Event.Dir DirLeft
+          Curses.KeyRight  -> Event.Dir DirRight
+          Curses.KeyChar c -> Event.Key c
+          otherwise        -> Event.Noop

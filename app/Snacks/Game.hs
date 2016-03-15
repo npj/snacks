@@ -16,38 +16,49 @@ import qualified Snacks.UI as UI (
     View
   , gridSize
   , drawScreen
+  , drawPrompt
   , drawSnake
+  , clearSnake
   , drawFood
   , refresh
   )
 import Snacks.World (
     World(snake, screen, food, speed)
   , Screen(Start, PrePlay, Playing)
-  , Snake(dir)
+  , Snake
   , createWorld
+  , moveSnake
+  , turnSnake
   )
 
+import Snacks.Logging (Logger, createLogger, closeLogger, logStr)
+
 import Control.Exception (finally)
-import Control.Monad (forever)
+import Control.Monad (liftM, forever)
 import Control.Concurrent (ThreadId, forkIO, threadDelay, yield)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, putMVar)
-import System.Random (getStdGen)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import System.Random (mkStdGen)
 
 data Engine = Engine { loop     :: Event.Loop
                      , view     :: UI.View
                      , world    :: World
                      , tickerId :: MVar ThreadId
+                     , logger   :: Logger
                      }
 
 createEngine :: Event.Loop -> UI.View -> IO (Engine)
 createEngine l v = do
-  gen  <- getStdGen
-  mvar <- newEmptyMVar
-  let w = createWorld gen $ UI.gridSize v
+  time     <- liftM round getPOSIXTime
+  mvar     <- newEmptyMVar
+  debugLog <- createLogger "debug.txt"
+  logStr "Created engine." debugLog
+  let w = createWorld (mkStdGen time) $ UI.gridSize v
   return $ Engine { loop     = l
                   , view     = v
                   , world    = w
                   , tickerId = mvar
+                  , logger   = debugLog
                   }
 
 runEngine :: Engine -> IO ()
@@ -56,6 +67,8 @@ runEngine engine = do
   UI.drawScreen Start (view engine')
   UI.refresh (view engine')
   waitFor $ runLoop engine'
+  logStr "Shutting down" (logger engine')
+  closeLogger . logger $ engine'
 
 runLoop :: Engine -> IO ()
 runLoop engine = do
@@ -81,16 +94,23 @@ startGame _ engine = do
 
 playGame :: Event.Event -> Engine -> IO Engine
 playGame (Event.Dir d) engine = do
-  let engine' = updateSnake (\s -> s { dir = d})
+  let engine' = updateSnake (turnSnake d)
               . updateWorld (\w -> w { screen = Playing })
               $ engine
   startTicker engine'
   return engine'
-playGame _ engine = return engine
+playGame e engine = return engine
 
 stepGame :: Event.Event -> Engine -> IO Engine
-stepGame Event.Tick = return
-stepGame _ = return
+stepGame Event.Tick engine = do
+  let engine' = updateSnake moveSnake engine
+  UI.clearSnake (snake . world $ engine)  (view engine)
+  UI.drawSnake  (snake . world $ engine') (view engine')
+  UI.refresh (view engine')
+  return engine'
+stepGame (Event.Dir d) engine =
+  return $ updateSnake (turnSnake d) engine
+stepGame _ engine = return engine
 
 updateWorld :: (World -> World) -> Engine -> Engine
 updateWorld f engine = engine { world = f (world engine) }
@@ -101,7 +121,9 @@ updateSnake f engine = updateWorld g engine
 
 startTicker :: Engine -> IO ()
 startTicker engine = do
+  logStr "startTicker" (logger engine)
   threadId <- forkIO $ forever $ do
+    logStr "tick" (logger engine)
     Event.post (loop engine) Event.Tick
     yield
     threadDelay . round . (* 1000) . speed . world $ engine

@@ -20,6 +20,7 @@ executable snacks
   build-depends:       base
                      , containers
                      , random
+                     , time
                      , hscurses
   default-language:    Haskell2010
   other-modules:       Snacks
@@ -28,6 +29,7 @@ executable snacks
                      , Snacks.UI
                      , Snacks.World
                      , Snacks.Types
+                     , Snacks.Logging
 
 test-suite snacks-test
   type:                exitcode-stdio-1.0
