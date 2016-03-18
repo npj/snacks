@@ -4,8 +4,12 @@ module Snacks.World
 , Snake(dir, body)
 , Food(position)
 , createWorld
+, setScreen
+, newFood
 , moveSnake
 , turnSnake
+, growSnake
+, snakeAteFood
 ) where
 
 import Snacks.Types (
@@ -41,8 +45,8 @@ createWorld gen s = World { size   = s
                           , food   = createFood foodPos
                           , speed  = 100
                           }
-  where (snakePos, gen') = randomPos gen  (quadrant 0 s)
-        (foodPos, _)     = randomPos gen' (quadrant 3 s)
+  where (snakePos, gen') = randomPos gen  (quadDimensions s 0)
+        (foodPos, _)     = randomPos gen' (quadDimensions s 3)
 
 createFood :: (Int, Int) -> Food
 createFood pos = Food { position = pos }
@@ -51,6 +55,15 @@ createSnake :: (Int, Int) -> Snake
 createSnake pos = Snake { dir  = DirRight
                         , body = [pos]
                         }
+
+setScreen :: Screen -> World -> World
+setScreen s w = w { screen = s }
+
+newFood :: StdGen -> World -> World
+newFood gen w = w { food = createFood . fst . randomPos gen $ dimensions }
+  where headPos    = head . body . snake $ w
+        snakeQuad  = posQuad (size w) headPos
+        dimensions = quadDimensions (size w) . oppositeQuad $ snakeQuad
 
 turnSnake :: Direction -> Snake -> Snake
 turnSnake d s =
@@ -65,16 +78,31 @@ moveSnake s = s { body = next (dir s) (head . body $ s) : (tail . body $ s) }
         next DirLeft  (row, col) = (row, col - 1)
         next DirRight (row, col) = (row, col + 1)
 
+growSnake :: Snake -> Snake
+growSnake = undefined
+
+snakeAteFood :: Snake -> Food -> Bool
+snakeAteFood = undefined
+
 randomPos :: StdGen -> ((Int, Int, Int, Int)) -> ((Int, Int), StdGen)
 randomPos gen (r, c, rows, cols) = ((r + row, c + col), gen'')
   where (row, gen')  = randomR (1, rows - 1) gen
         (col, gen'') = randomR (1, cols - 1) gen'
 
-quadrant :: Int -> (Int, Int) -> ((Int, Int, Int, Int))
-quadrant i (rows, cols) = case i of
+quadDimensions :: (Int, Int) -> Int -> ((Int, Int, Int, Int))
+quadDimensions (rows, cols) i = case i of
   0 -> (0, 0, r, c)
   1 -> (0, c, r, c)
   2 -> (r, 0, r, c)
   3 -> (r, c, r, c)
   where r = rows `div` 2
         c = cols `div` 2
+
+oppositeQuad :: Int -> Int
+oppositeQuad 0 = 3
+oppositeQuad 1 = 2
+oppositeQuad 2 = 1
+oppositeQuad 3 = 0
+
+posQuad :: (Int, Int) -> (Int, Int) -> Int
+posQuad (sizeR, sizeC) (posR, posC) = undefined

@@ -26,9 +26,13 @@ import Snacks.World (
     World(snake, screen, food, speed)
   , Screen(Start, PrePlay, Playing)
   , Snake
+  , setScreen
   , createWorld
+  , newFood
   , moveSnake
   , turnSnake
+  , growSnake
+  , snakeAteFood
   )
 
 import Snacks.Logging (Logger, createLogger, closeLogger, logStr)
@@ -63,7 +67,7 @@ createEngine l v = do
 
 runEngine :: Engine -> IO ()
 runEngine engine = do
-  let engine' = updateWorld (\w -> w { screen = Start }) engine
+  let engine' = updateWorld (setScreen Start) engine
   UI.drawScreen Start (view engine')
   UI.refresh (view engine')
   waitFor $ runLoop engine'
@@ -85,7 +89,7 @@ handleEvent event engine = case (screen . world $ engine) of
 
 startGame :: Event.Event -> Engine -> IO Engine
 startGame _ engine = do
-  let engine' = updateWorld (\w -> w { screen = PrePlay })  engine
+  let engine' = updateWorld (setScreen PrePlay) engine
   UI.drawSnake (snake . world $ engine') (view engine')
   UI.drawFood  (food  . world $ engine') (view engine')
   UI.drawScreen PrePlay (view engine')
@@ -95,7 +99,7 @@ startGame _ engine = do
 playGame :: Event.Event -> Engine -> IO Engine
 playGame (Event.Dir d) engine = do
   let engine' = updateSnake (turnSnake d)
-              . updateWorld (\w -> w { screen = Playing })
+              . updateWorld (setScreen Playing)
               $ engine
   startTicker engine'
   return engine'
@@ -103,13 +107,12 @@ playGame e engine = return engine
 
 stepGame :: Event.Event -> Engine -> IO Engine
 stepGame Event.Tick engine = do
-  let engine' = updateSnake moveSnake engine
+  engine' <- processStep engine
   UI.clearSnake (snake . world $ engine)  (view engine)
   UI.drawSnake  (snake . world $ engine') (view engine')
   UI.refresh (view engine')
   return engine'
-stepGame (Event.Dir d) engine =
-  return $ updateSnake (turnSnake d) engine
+stepGame (Event.Dir d) engine = return $ updateSnake (turnSnake d) engine
 stepGame _ engine = return engine
 
 updateWorld :: (World -> World) -> Engine -> Engine
@@ -118,6 +121,19 @@ updateWorld f engine = engine { world = f (world engine) }
 updateSnake :: (Snake -> Snake) -> Engine -> Engine
 updateSnake f engine = updateWorld g engine
   where g w = w { snake = f (snake w) }
+
+processStep :: Engine -> IO Engine
+processStep engine = do
+  let engine' = updateSnake moveSnake engine
+  if snakeAteFood (snake . world $ engine') (food . world $ engine')
+     then do
+       time <- liftM round getPOSIXTime
+       let engine'' = updateSnake growSnake
+                    . updateWorld (newFood . mkStdGen $ time)
+                    $ engine'
+       UI.drawFood (food . world $ engine'') (view engine'')
+       return engine''
+     else return engine'
 
 startTicker :: Engine -> IO ()
 startTicker engine = do
