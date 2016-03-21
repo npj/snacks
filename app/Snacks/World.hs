@@ -87,9 +87,11 @@ play _ world = return world
 step :: Event -> World -> Writer [WorldUpdate] World
 step Tick world = do
   if willEat (food world) (snake world) then do
-    let w      = newFood world
-        s      = growSnake (snake w)
-        world' = w { snake = s }
+    let (food', gen') = newFood world
+        world'        = world { food = food'
+                              , gen  = gen'
+                              , snake = growSnake (snake world)
+                              }
     tell [ NewFood (food world) (food world')
          , GrowSnake (snake world') (snake world')
          ]
@@ -104,10 +106,8 @@ step (Dir d) world = do
   return world'
 step _ world = return world
 
-newFood :: World -> World
-newFood world = world { food = createFood newPos
-                      , gen  = gen'
-                      }
+newFood :: World -> (Food, StdGen)
+newFood world = (createFood newPos, gen')
   where headPos        = head . body . snake $ world
         snakeQuad      = posQuad (size world) headPos
         dimensions     = quadDimensions (size world) . oppositeQuad $ snakeQuad
