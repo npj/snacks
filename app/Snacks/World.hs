@@ -6,11 +6,6 @@ module Snacks.World
 , WorldUpdate(..)
 , createWorld
 , handleEvent
-, newFood
-, moveSnake
-, turnSnake
-, growSnake
-, snakeAteFood
 ) where
 
 import Snacks.Types (
@@ -39,23 +34,27 @@ data World = World { size   :: (Int, Int)
                    , snake  :: Snake
                    , food   :: Food
                    , speed  :: Float
+                   , gen    :: StdGen
                    }
   deriving (Show)
 
 data WorldUpdate = SetScreen Screen
                  | MoveSnake Snake Snake
                  | TurnSnake Snake Snake
+                 | GrowSnake Snake Snake
+                 | NewFood   Food  Food
   deriving (Show)
 
 createWorld :: StdGen -> (Int, Int) -> World
-createWorld gen s = World { size   = s
-                          , screen = Start
-                          , snake  = createSnake snakePos
-                          , food   = createFood foodPos
-                          , speed  = 100
-                          }
-  where (snakePos, gen') = randomPos gen  (quadDimensions s 0)
-        (foodPos, _)     = randomPos gen' (quadDimensions s 3)
+createWorld g s = World { size   = s
+                        , screen = Start
+                        , snake  = createSnake snakePos
+                        , food   = createFood foodPos
+                        , speed  = 100
+                        , gen    = g''
+                        }
+  where (snakePos, g') = randomPos g  (quadDimensions s 0)
+        (foodPos, g'') = randomPos g' (quadDimensions s 3)
 
 createFood :: (Int, Int) -> Food
 createFood pos = Food { position = pos }
@@ -87,20 +86,32 @@ play _ world = return world
 
 step :: Event -> World -> Writer [WorldUpdate] World
 step Tick world = do
-  let world' = world { snake = moveSnake (snake world) }
-  tell [MoveSnake (snake world) (snake world')]
-  return world'
+  if willEat (food world) (snake world) then do
+    let w      = newFood world
+        s      = growSnake (snake w)
+        world' = w { snake = s }
+    tell [ NewFood (food world) (food world')
+         , GrowSnake (snake world') (snake world')
+         ]
+    return world'
+  else do
+    let world' = world { snake = moveSnake (snake world) }
+    tell [MoveSnake (snake world) (snake world')]
+    return world'
 step (Dir d) world = do
   let world' = world { snake = turnSnake d (snake world) }
   tell [TurnSnake (snake world) (snake world')]
   return world'
 step _ world = return world
 
-newFood :: StdGen -> World -> World
-newFood gen w = w { food = createFood . fst . randomPos gen $ dimensions }
-  where headPos    = head . body . snake $ w
-        snakeQuad  = posQuad (size w) headPos
-        dimensions = quadDimensions (size w) . oppositeQuad $ snakeQuad
+newFood :: World -> World
+newFood world = world { food = createFood newPos
+                      , gen  = gen'
+                      }
+  where headPos        = head . body . snake $ world
+        snakeQuad      = posQuad (size world) headPos
+        dimensions     = quadDimensions (size world) . oppositeQuad $ snakeQuad
+        (newPos, gen') = randomPos (gen world) dimensions
 
 turnSnake :: Direction -> Snake -> Snake
 turnSnake d s =
@@ -109,17 +120,24 @@ turnSnake d s =
      else s { dir = d }
 
 moveSnake :: Snake -> Snake
-moveSnake s = s { body = next (dir s) (head . body $ s) : (tail . body $ s) }
-  where next DirUp    (row, col) = (row - 1, col)
-        next DirDown  (row, col) = (row + 1, col)
-        next DirLeft  (row, col) = (row, col - 1)
-        next DirRight (row, col) = (row, col + 1)
+moveSnake snake = snake { body = n : i }
+  where h = head . body $ snake
+        i = init . body $ snake
+        n = next (dir snake) h
 
 growSnake :: Snake -> Snake
-growSnake = undefined
+growSnake snake = snake { body = n : (body snake) }
+  where h = head . body $ snake
+        n = next (dir snake) h
 
-snakeAteFood :: Snake -> Food -> Bool
-snakeAteFood = undefined
+next :: Direction -> (Int, Int) -> (Int, Int)
+next DirUp    (row, col) = (row - 1, col)
+next DirDown  (row, col) = (row + 1, col)
+next DirLeft  (row, col) = (row, col - 1)
+next DirRight (row, col) = (row, col + 1)
+
+willEat :: Food -> Snake -> Bool
+willEat food snake = position food == next (dir snake) (head . body $ snake)
 
 randomPos :: StdGen -> ((Int, Int, Int, Int)) -> ((Int, Int), StdGen)
 randomPos gen (r, c, rows, cols) = ((r + row, c + col), gen'')
@@ -142,4 +160,8 @@ oppositeQuad 2 = 1
 oppositeQuad 3 = 0
 
 posQuad :: (Int, Int) -> (Int, Int) -> Int
-posQuad (sizeR, sizeC) (posR, posC) = undefined
+posQuad (sizeR, sizeC) (posR, posC)
+  | (posR <  sizeR `div` 2 && posC <  sizeC `div` 2) = 0
+  | (posR <  sizeR `div` 2 && posC >= sizeC `div` 2) = 1
+  | (posR >= sizeR `div` 2 && posC <  sizeC `div` 2) = 2
+  | (posR >= sizeR `div` 2 && posC >= sizeC `div` 2) = 3

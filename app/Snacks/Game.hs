@@ -98,6 +98,13 @@ runUpdate (MoveSnake old new) engine = do
   UI.clearSnake old (view engine)
   UI.drawSnake  new (view engine)
 
+runUpdate (GrowSnake old new) engine = do
+  UI.clearSnake old (view engine)
+  UI.drawSnake  new (view engine)
+
+runUpdate (NewFood old new) engine = do
+  UI.drawFood new (view engine)
+
 runUpdate (TurnSnake _ _) _ = return ()
 
 startTicker :: Engine -> IO ()
@@ -107,19 +114,6 @@ startTicker engine = do
     yield
     threadDelay . round . (* 1000) . speed . world $ engine
   putMVar (ticker engine) tid
-
--- processStep :: Engine -> IO Engine
--- processStep engine = do
---   let engine' = updateSnake moveSnake engine
---   if snakeAteFood (snake . world $ engine') (food . world $ engine')
---      then do
---        time <- liftM round getPOSIXTime
---        let engine'' = updateSnake growSnake
---                     . updateWorld (newFood . mkStdGen $ time)
---                     $ engine'
---        UI.drawFood (food . world $ engine'') (view engine'')
---        return engine''
---      else return engine'
 
 waitFor :: IO () -> IO ()
 waitFor action = do
