@@ -16,7 +16,6 @@ import qualified Snacks.UI as UI (
     View
   , gridSize
   , drawScreen
-  , drawPrompt
   , drawSnake
   , clearSnake
   , drawFood
@@ -26,20 +25,16 @@ import Snacks.World (
     World(snake, screen, food, speed)
   , Screen(Start, PrePlay, Playing)
   , Snake
-  , setScreen
+  , WorldUpdate(..)
   , createWorld
-  , newFood
-  , moveSnake
-  , turnSnake
-  , growSnake
-  , snakeAteFood
+  , handleEvent
   )
 
 import Snacks.Logging (Logger, createLogger, closeLogger, logStr)
 
 import Control.Exception (finally)
 import Control.Monad (liftM, forever)
-import Control.Concurrent (ThreadId, forkIO, threadDelay, yield)
+import Control.Concurrent (ThreadId, forkIO, yield, threadDelay)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, putMVar)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Random (mkStdGen)
@@ -47,103 +42,84 @@ import System.Random (mkStdGen)
 data Engine = Engine { loop     :: Event.Loop
                      , view     :: UI.View
                      , world    :: World
-                     , tickerId :: MVar ThreadId
+                     , ticker   :: MVar ThreadId
                      , logger   :: Logger
                      }
 
 createEngine :: Event.Loop -> UI.View -> IO (Engine)
 createEngine l v = do
   time     <- liftM round getPOSIXTime
-  mvar     <- newEmptyMVar
+  t        <- newEmptyMVar
   debugLog <- createLogger "debug.txt"
   logStr "Created engine." debugLog
   let w = createWorld (mkStdGen time) $ UI.gridSize v
   return $ Engine { loop     = l
                   , view     = v
                   , world    = w
-                  , tickerId = mvar
+                  , ticker   = t
                   , logger   = debugLog
                   }
 
 runEngine :: Engine -> IO ()
 runEngine engine = do
-  let engine' = updateWorld (setScreen Start) engine
-  UI.drawScreen Start (view engine')
-  UI.refresh (view engine')
-  waitFor $ runLoop engine'
-  logStr "Shutting down" (logger engine')
-  closeLogger . logger $ engine'
+  runUpdates [SetScreen Start] engine
+  waitFor $ runLoop engine
+  logStr "Shutting down" (logger engine)
+  closeLogger . logger $ engine
 
 runLoop :: Engine -> IO ()
 runLoop engine = do
   event <- Event.next (loop engine)
   case event of
     Event.Stop -> return ()
-    otherwise  -> handleEvent event engine >>= runLoop
+    otherwise -> do
+      let (world', updates) = handleEvent event (world engine)
+      runUpdates updates engine
+      runLoop (engine { world = world' })
 
-handleEvent :: Event.Event -> Engine -> IO Engine
-handleEvent event engine = case (screen . world $ engine) of
-  Start   -> startGame event engine
-  PrePlay -> playGame  event engine
-  Playing -> stepGame  event engine
+runUpdates :: [WorldUpdate] -> Engine -> IO ()
+runUpdates updates engine = do
+  mapM_ (flip runUpdate $ engine) updates
+  UI.refresh (view engine)
 
-startGame :: Event.Event -> Engine -> IO Engine
-startGame _ engine = do
-  let engine' = updateWorld (setScreen PrePlay) engine
-  UI.drawSnake (snake . world $ engine') (view engine')
-  UI.drawFood  (food  . world $ engine') (view engine')
-  UI.drawScreen PrePlay (view engine')
-  UI.refresh (view engine')
-  return engine'
+runUpdate :: WorldUpdate -> Engine -> IO ()
+runUpdate (SetScreen PrePlay) engine = do
+  UI.drawScreen PrePlay (view engine)
+  UI.drawSnake (snake . world $ engine) (view engine)
+  UI.drawFood  (food  . world $ engine) (view engine)
 
-playGame :: Event.Event -> Engine -> IO Engine
-playGame (Event.Dir d) engine = do
-  let engine' = updateSnake (turnSnake d)
-              . updateWorld (setScreen Playing)
-              $ engine
-  startTicker engine'
-  return engine'
-playGame e engine = return engine
+runUpdate (SetScreen Playing) engine = do
+  startTicker engine
+  UI.drawScreen Playing (view engine)
 
-stepGame :: Event.Event -> Engine -> IO Engine
-stepGame Event.Tick engine = do
-  engine' <- processStep engine
-  UI.clearSnake (snake . world $ engine)  (view engine)
-  UI.drawSnake  (snake . world $ engine') (view engine')
-  UI.refresh (view engine')
-  return engine'
-stepGame (Event.Dir d) engine = return $ updateSnake (turnSnake d) engine
-stepGame _ engine = return engine
+runUpdate (SetScreen s) engine = UI.drawScreen s (view engine)
 
-updateWorld :: (World -> World) -> Engine -> Engine
-updateWorld f engine = engine { world = f (world engine) }
+runUpdate (MoveSnake old new) engine = do
+  UI.clearSnake old (view engine)
+  UI.drawSnake  new (view engine)
 
-updateSnake :: (Snake -> Snake) -> Engine -> Engine
-updateSnake f engine = updateWorld g engine
-  where g w = w { snake = f (snake w) }
-
-processStep :: Engine -> IO Engine
-processStep engine = do
-  let engine' = updateSnake moveSnake engine
-  if snakeAteFood (snake . world $ engine') (food . world $ engine')
-     then do
-       time <- liftM round getPOSIXTime
-       let engine'' = updateSnake growSnake
-                    . updateWorld (newFood . mkStdGen $ time)
-                    $ engine'
-       UI.drawFood (food . world $ engine'') (view engine'')
-       return engine''
-     else return engine'
+runUpdate (TurnSnake _ _) _ = return ()
 
 startTicker :: Engine -> IO ()
 startTicker engine = do
-  logStr "startTicker" (logger engine)
-  threadId <- forkIO $ forever $ do
-    logStr "tick" (logger engine)
+  tid <- forkIO $ forever $ do
     Event.post (loop engine) Event.Tick
     yield
     threadDelay . round . (* 1000) . speed . world $ engine
-  putMVar (tickerId engine) threadId
+  putMVar (ticker engine) tid
+
+-- processStep :: Engine -> IO Engine
+-- processStep engine = do
+--   let engine' = updateSnake moveSnake engine
+--   if snakeAteFood (snake . world $ engine') (food . world $ engine')
+--      then do
+--        time <- liftM round getPOSIXTime
+--        let engine'' = updateSnake growSnake
+--                     . updateWorld (newFood . mkStdGen $ time)
+--                     $ engine'
+--        UI.drawFood (food . world $ engine'') (view engine'')
+--        return engine''
+--      else return engine'
 
 waitFor :: IO () -> IO ()
 waitFor action = do

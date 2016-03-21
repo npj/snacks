@@ -4,10 +4,9 @@ module Snacks.UI
 , destroyView
 , gridSize
 , drawScreen
-, drawPrompt
+, drawFood
 , drawSnake
 , clearSnake
-, drawFood
 , refresh
 ) where
 
@@ -19,6 +18,7 @@ import qualified Snacks.Event as Event (
   , Event( Stop
          , Dir
          , Key
+         , Tick
          , Noop
          )
   )
@@ -26,10 +26,11 @@ import Snacks.World (
     Screen(Start, PrePlay)
   , Snake(dir, body)
   , Food(position)
+  , WorldUpdate(..)
   )
 
 import Control.Monad (forever, forM_)
-import Control.Concurrent (ThreadId, forkIO)
+import Control.Concurrent (forkIO)
 import Data.Map.Strict as M (Map)
 
 import qualified UI.HSCurses.Curses as Curses (
@@ -97,9 +98,8 @@ gridSize :: View -> (Int, Int)
 gridSize view = (rows - 2, cols `div` 2 - 2)
   where (rows, cols) = size view
 
-drawScreen :: Screen -> View -> IO ()
-drawScreen Start   = drawStartScreen
-drawScreen PrePlay = drawPrePlayScreen
+runUpdates :: [WorldUpdate] -> View -> IO ()
+runUpdates = undefined
 
 drawSnake :: Snake -> View -> IO ()
 drawSnake snake view =
@@ -113,8 +113,13 @@ clearSnake snake view =
 
 drawFood :: Food -> View -> IO ()
 drawFood food view =
-  Curses.mvWAddStr (window view) row (col * 2) "λ"
+  Curses.mvWAddStr (window view) row (col * 2) "☰"
   where (row, col) = (position food)
+
+drawScreen :: Screen -> View -> IO ()
+drawScreen Start   = drawStartScreen
+drawScreen PrePlay = drawPrePlayScreen
+drawScreen _ = return . const ()
 
 drawStartScreen :: View -> IO ()
 drawStartScreen view = do
@@ -146,10 +151,11 @@ clearPrompt v = do
       str = replicate (snd s - 2) ' '
   Curses.mvWAddStr (window v) row 1 str
 
-spawnInputThread :: View -> IO ThreadId
+spawnInputThread :: View -> IO ()
 spawnInputThread view = do
   forkIO $ forever $ Curses.getCh >>= post
-  where post         = Event.post (loop view) . eventFor
+  return ()
+  where post = Event.post (loop view) . eventFor
         eventFor key = case key of
           Curses.KeyUp     -> Event.Dir DirUp
           Curses.KeyDown   -> Event.Dir DirDown

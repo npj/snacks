@@ -3,8 +3,9 @@ module Snacks.World
 , Screen(..)
 , Snake(dir, body)
 , Food(position)
+, WorldUpdate(..)
 , createWorld
-, setScreen
+, handleEvent
 , newFood
 , moveSnake
 , turnSnake
@@ -17,7 +18,10 @@ import Snacks.Types (
   , opposite
   )
 
+import Snacks.Event (Event(..))
+
 import System.Random (StdGen, randomR)
+import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 
 data Screen = Start | PrePlay | Playing
   deriving (Show, Read, Eq)
@@ -38,6 +42,11 @@ data World = World { size   :: (Int, Int)
                    }
   deriving (Show)
 
+data WorldUpdate = SetScreen Screen
+                 | MoveSnake Snake Snake
+                 | TurnSnake Snake Snake
+  deriving (Show)
+
 createWorld :: StdGen -> (Int, Int) -> World
 createWorld gen s = World { size   = s
                           , screen = Start
@@ -56,8 +65,36 @@ createSnake pos = Snake { dir  = DirRight
                         , body = [pos]
                         }
 
-setScreen :: Screen -> World -> World
-setScreen s w = w { screen = s }
+handleEvent :: Event -> World -> (World, [WorldUpdate])
+handleEvent event world = runWriter $ handle (screen world) event world
+  where handle Start   = start
+        handle PrePlay = play
+        handle Playing = step
+
+start :: Event -> World -> Writer [WorldUpdate] World
+start _ world = do
+  tell [SetScreen PrePlay]
+  return $ world { screen = PrePlay }
+
+play :: Event -> World -> Writer [WorldUpdate] World
+play (Dir d) world = do
+  let world' = world { snake  = turnSnake d (snake world)
+                     , screen = Playing
+                     }
+  tell [TurnSnake (snake world) (snake world'), SetScreen Playing]
+  return world'
+play _ world = return world
+
+step :: Event -> World -> Writer [WorldUpdate] World
+step Tick world = do
+  let world' = world { snake = moveSnake (snake world) }
+  tell [MoveSnake (snake world) (snake world')]
+  return world'
+step (Dir d) world = do
+  let world' = world { snake = turnSnake d (snake world) }
+  tell [TurnSnake (snake world) (snake world')]
+  return world'
+step _ world = return world
 
 newFood :: StdGen -> World -> World
 newFood gen w = w { food = createFood . fst . randomPos gen $ dimensions }
