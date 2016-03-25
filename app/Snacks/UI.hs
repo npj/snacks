@@ -23,7 +23,7 @@ import qualified Snacks.Event as Event (
          )
   )
 import Snacks.World (
-    Screen(Start, PrePlay)
+    Screen(Start, PrePlay, GameOver)
   , Snake(dir, body)
   , Food(position)
   , WorldUpdate(..)
@@ -45,12 +45,10 @@ import qualified UI.HSCurses.Curses as Curses (
   , CursorVisibility(CursorInvisible)
   , initScr
   , newWin
-  , wBorder
   , wRefresh
   , stdScr
   , refresh
   , update
-  , defaultBorder
   , mvWAddStr
   , endWin
   , getCh
@@ -95,11 +93,8 @@ destroyView :: View -> IO ()
 destroyView _ = Curses.endWin
 
 gridSize :: View -> (Int, Int)
-gridSize view = (rows - 2, cols `div` 2 - 2)
+gridSize view = (rows - 1, cols `div` 2 - 2)
   where (rows, cols) = size view
-
-runUpdates :: [WorldUpdate] -> View -> IO ()
-runUpdates = undefined
 
 drawSnake :: Snake -> View -> IO ()
 drawSnake snake view =
@@ -119,23 +114,37 @@ drawFood food view =
 drawScreen :: Screen -> View -> IO ()
 drawScreen Start   = drawStartScreen
 drawScreen PrePlay = drawPrePlayScreen
+drawScreen GameOver = drawGameOverScreen
 drawScreen _ = return . const ()
 
 drawStartScreen :: View -> IO ()
 drawStartScreen view = do
-  drawBorder view Curses.defaultBorder
   drawPrompt view "Press any key to start"
+  drawBorder view
 
 drawPrePlayScreen :: View -> IO ()
 drawPrePlayScreen view = do
-  drawBorder view Curses.defaultBorder
   clearPrompt view
+  drawBorder view
+
+drawGameOverScreen :: View -> IO ()
+drawGameOverScreen view = do
+  drawPrompt view "u ded"
 
 refresh :: View -> IO ()
 refresh = Curses.wRefresh . window
 
-drawBorder :: View -> Curses.Border -> IO ()
-drawBorder v border = Curses.wBorder (window v) border
+drawBorder :: View -> IO ()
+drawBorder v = do
+  let (top, left)       = (0, 0)
+      (bottom', right') = size v
+      (bottom, right)   = (bottom' - 1, right' - 2)
+  forM_ [(top + 1)..(bottom - 1)] $ \row -> do
+    Curses.mvWAddStr (window v) row left  "|"
+    Curses.mvWAddStr (window v) row right "|"
+  forM_ [left..right - 1] $ \col -> do
+    Curses.mvWAddStr (window v) top    col  "-"
+    Curses.mvWAddStr (window v) bottom col  "-"
 
 drawPrompt :: View -> String -> IO ()
 drawPrompt v string = do

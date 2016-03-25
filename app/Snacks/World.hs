@@ -18,7 +18,7 @@ import Snacks.Event (Event(..))
 import System.Random (StdGen, randomR)
 import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 
-data Screen = Start | PrePlay | Playing
+data Screen = Start | PrePlay | Playing | GameOver
   deriving (Show, Read, Eq)
 
 data Snake = Snake { dir  :: Direction
@@ -66,9 +66,10 @@ createSnake pos = Snake { dir  = DirRight
 
 handleEvent :: Event -> World -> (World, [WorldUpdate])
 handleEvent event world = runWriter $ handle (screen world) event world
-  where handle Start   = start
-        handle PrePlay = play
-        handle Playing = step
+  where handle Start    = start
+        handle PrePlay  = play
+        handle Playing  = step
+        handle GameOver = const return
 
 start :: Event -> World -> Writer [WorldUpdate] World
 start _ world = do
@@ -86,25 +87,59 @@ play _ world = return world
 
 step :: Event -> World -> Writer [WorldUpdate] World
 step Tick world = do
-  if willEat (food world) (snake world) then do
-    let (food', gen') = newFood world
-        world'        = world { food = food'
-                              , gen  = gen'
-                              , snake = growSnake (snake world)
-                              }
-    tell [ NewFood (food world) (food world')
-         , GrowSnake (snake world') (snake world')
-         ]
-    return world'
-  else do
-    let world' = world { snake = moveSnake (snake world) }
-    tell [MoveSnake (snake world) (snake world')]
-    return world'
+  case worldEvent world of
+    WillEat -> do
+      let (food', gen') = newFood world
+          world'        = world { food = food'
+                                , gen  = gen'
+                                , snake = growSnake (snake world)
+                                }
+      tell [ NewFood (food world) (food world')
+          , GrowSnake (snake world') (snake world')
+          ]
+      return world'
+
+    Died -> do
+      let world' = world { screen = GameOver }
+      tell [ SetScreen GameOver ]
+      return world'
+
+    otherwise -> do
+      let world' = world { snake = moveSnake (snake world) }
+      tell [MoveSnake (snake world) (snake world')]
+      return world'
+
 step (Dir d) world = do
   let world' = world { snake = turnSnake d (snake world) }
   tell [TurnSnake (snake world) (snake world')]
   return world'
 step _ world = return world
+
+worldEvent :: World -> WorldEvent
+worldEvent world | willEat world = WillEat
+                | died world    = Died
+                | otherwise     = NoEvent
+
+willEat :: World -> Bool
+willEat world = position f == next (dir s) (head . body $ s)
+  where f = food world
+        s = snake world
+
+died :: World -> Bool
+died world = isWall pos world || isSnake pos world
+  where pos = head . body . snake $ world
+
+isWall :: (Int, Int) -> World -> Bool
+isWall pos world = row == top || row == bottom || col == left || col == right
+  where row    = fst pos
+        col    = snd pos
+        top    = 0
+        bottom = (fst . size $ world)
+        left   = 0
+        right  = (snd . size $ world)
+
+isSnake :: (Int, Int) -> World -> Bool
+isSnake pos world = any (== pos) (tail . body . snake $ world)
 
 newFood :: World -> (Food, StdGen)
 newFood world = (createFood newPos, gen')
@@ -136,8 +171,6 @@ next DirDown  (row, col) = (row + 1, col)
 next DirLeft  (row, col) = (row, col - 1)
 next DirRight (row, col) = (row, col + 1)
 
-willEat :: Food -> Snake -> Bool
-willEat food snake = position food == next (dir snake) (head . body $ snake)
 
 randomPos :: StdGen -> ((Int, Int, Int, Int)) -> ((Int, Int), StdGen)
 randomPos gen (r, c, rows, cols) = ((r + row, c + col), gen'')
